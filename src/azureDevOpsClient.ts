@@ -6,9 +6,12 @@ import {
   AuthenticationRecord,
   DefaultAzureCredential,
   InteractiveBrowserCredential,
+  InteractiveBrowserCredentialNodeOptions,
   deserializeAuthenticationRecord,
   serializeAuthenticationRecord,
+  useIdentityPlugin,
 } from '@azure/identity';
+import { cachePersistencePlugin } from '@azure/identity-cache-persistence';
 import CircuitBreaker from 'opossum';
 import { Logger } from 'pino';
 
@@ -26,6 +29,9 @@ import {
 } from './utils.js';
 
 const azureDevopsScope = '499b84ac-1321-427f-aa17-267ca6975798/.default';
+const tokenCacheName = 'azure-devops-mcp';
+
+useIdentityPlugin(cachePersistencePlugin);
 
 interface RequestOptions {
   organization?: string;
@@ -547,11 +553,7 @@ export class AzureDevOpsClient {
     const authenticationRecord = await this.loadAuthenticationRecord();
     this.hasInteractiveAuthenticationRecord = Boolean(authenticationRecord);
     this.interactiveCredential = new InteractiveBrowserCredential(
-      compactObject({
-        clientId: this.config.azureClientId,
-        tenantId: this.config.azureTenantId,
-        authenticationRecord,
-      }),
+      this.buildInteractiveCredentialOptions(authenticationRecord),
     );
 
     return this.interactiveCredential;
@@ -584,11 +586,7 @@ export class AzureDevOpsClient {
     await this.saveAuthenticationRecord(authenticationRecord);
     this.hasInteractiveAuthenticationRecord = true;
     this.interactiveCredential = new InteractiveBrowserCredential(
-      compactObject({
-        clientId: this.config.azureClientId,
-        tenantId: this.config.azureTenantId,
-        authenticationRecord,
-      }),
+      this.buildInteractiveCredentialOptions(authenticationRecord),
     );
   }
 
@@ -625,6 +623,20 @@ export class AzureDevOpsClient {
       this.config.azureAuthRecordPath ??
       path.join(homedir(), '.azure-devops-mcp', 'authentication-record.json')
     );
+  }
+
+  private buildInteractiveCredentialOptions(
+    authenticationRecord?: AuthenticationRecord,
+  ): InteractiveBrowserCredentialNodeOptions {
+    return compactObject({
+      clientId: this.config.azureClientId,
+      tenantId: this.config.azureTenantId,
+      authenticationRecord,
+      tokenCachePersistenceOptions: {
+        enabled: true,
+        name: tokenCacheName,
+      },
+    });
   }
 
   private async safeReadBody(response: Response): Promise<unknown> {
